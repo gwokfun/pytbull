@@ -18,7 +18,7 @@ apt-get install -y apache2 vsftp
 ### 修改配置
 conf/config.cfg配置情况：
 
-`
+```
 [CLIENT]
 ipaddr                  = 192.168.183.130
 iface                   = eth0 #IDS抓包网口
@@ -86,7 +86,7 @@ ipReputation            = 1
 ipreputationnbtests     = 10
 blacklist 		= blacklist.txt 
 
-`
+```
 
 ### 使用
 
@@ -94,30 +94,31 @@ IDS：
 将server/python-server.py 上传至IDS
 创建用户pytbull
 
-`
+```
 useradd -d /var/log/suricata/ -s /bin/bash pytbull
 echo "pytbull:pytbull" |chpasswd
 usermod -G suricata pytbull
-`
+```
+
 执行
-`
+```
 python pytbull-server.py
-`
+```
 
 测试方:
 
-`
+```
 git clone ...
+```
 
-`
 
 安装依赖并修改conf/config.cfg
 
 执行
-`
+```
  python pytbull -t 192.168.186.130
 
-`
+```
 
 
-访问 http://192.168.186.129 可以获取可视化报告
+访问 http://localhost 可以获取可视化报告
