@@ -8,12 +8,16 @@ IDS: 192.168.183.130
 ### 安装依赖
 
 client：
+```
 apt-get install -y ncrack nikto hping3 apache2-utils \ 
 tcpreplay python-scapy python-feedparser python-cherrypy3 \
 python-paramiko nmap vsftp
+```
 
 server:
+```
 apt-get install -y apache2 vsftp
+```
 
 ### 修改配置
 conf/config.cfg配置情况：
