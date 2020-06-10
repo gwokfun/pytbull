@@ -123,7 +123,7 @@ git clone ...
  python pytbull -t 192.168.186.130
 
 ```
-![执行](https://github.com/gwokfun/pytbull/img/1.jpg)
+![执行](https://github.com/gwokfun/pytbull/1.png)
 
 访问 http://localhost 可以获取可视化报告
-![报告](https://github.com/gwokfun/pytbull/img/2.jpg)
+![报告](https://github.com/gwokfun/pytbull/2.png)
