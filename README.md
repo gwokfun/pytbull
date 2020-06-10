@@ -126,3 +126,4 @@ git clone ...
 
 
 访问 http://localhost 可以获取可视化报告
+!(https://github.com/gwokfun/pytbull/img/2.jpg)
