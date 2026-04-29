@@ -1,0 +1,14 @@
+# Blacklist Domains
+# One domain per line
+# Lines starting with # are comments
+
+# Known malicious domains (examples)
+malware-c2.example.com
+phishing-site.example.net
+
+# Cryptocurrency mining pools (examples)
+# pool.minergate.com
+# xmr-pool.example.com
+
+# Malware distribution sites (examples)
+# malware-download.example.org

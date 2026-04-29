@@ -1,0 +1,14 @@
+# Whitelist IPs
+# Trusted IP addresses that should not trigger alerts
+# One IP address or CIDR per line
+# Lines starting with # are comments
+
+# Internal monitoring systems
+# 10.0.1.100
+# 10.0.1.101
+
+# Known update servers
+# 192.168.1.50
+
+# Trusted external services
+# Add your trusted IPs here

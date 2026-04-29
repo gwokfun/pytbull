@@ -1,0 +1,32 @@
+# Whitelist Processes
+# Trusted processes that should not trigger alerts
+# One process name or pattern per line
+# Lines starting with # are comments
+
+# System update tools
+/usr/bin/apt-get
+/usr/bin/apt
+/usr/bin/yum
+/usr/bin/dnf
+/usr/bin/zypper
+
+# System monitoring tools
+/usr/bin/top
+/usr/bin/htop
+/usr/bin/ps
+/usr/bin/netstat
+/usr/sbin/ss
+
+# Backup tools
+/usr/bin/rsync
+/usr/bin/tar
+/usr/bin/gzip
+
+# Legitimate download tools for updates
+/usr/bin/wget
+/usr/bin/curl
+/usr/bin/fetch
+
+# Monitoring agents
+/usr/bin/zabbix_agentd
+/usr/sbin/nagios

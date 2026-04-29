@@ -1,0 +1,19 @@
+# Blacklist Files
+# One file path or pattern per line
+# Supports glob patterns: * (any characters), ? (single character)
+# Lines starting with # are comments
+
+# Known webshell patterns
+/var/www/*/c99.php
+/var/www/*/r57.php
+/var/www/*/b374k.php
+/var/www/*/*.suspected
+
+# Suspicious script locations
+/tmp/*.sh
+/dev/shm/*.sh
+/dev/shm/*.py
+
+# Known malware paths (examples)
+# /tmp/.X11-unix/.X*
+# /dev/shm/.ICE-unix/*

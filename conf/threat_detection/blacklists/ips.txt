@@ -1,0 +1,17 @@
+# Blacklist IPs
+# One IP address or CIDR per line
+# Lines starting with # are comments
+
+# Known malicious IPs
+192.0.2.100
+203.0.113.50
+
+# Tor exit nodes (example)
+# 185.220.101.1
+# 185.220.101.2
+
+# Known C2 servers (example)
+# 198.51.100.10
+
+# Blacklisted IP ranges
+# 192.0.2.0/24
