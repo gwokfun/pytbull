@@ -1,0 +1,390 @@
+# File System Anomaly Detection Rules
+# This file contains rules for detecting file-related threats
+
+---
+rule_id: "FILE-001"
+name: "敏感文件修改检测"
+description: "监控系统关键文件的修改操作"
+category: "file"
+severity: "high"
+enabled: true
+version: "1.0"
+author: "Security Team"
+
+tags:
+  - file
+  - integrity
+  - configuration
+
+data_sources:
+  - auditd
+
+conditions:
+  event_type: "PATH"
+  syscall:
+    - "openat"
+    - "open"
+    - "write"
+    - "rename"
+    - "unlink"
+
+  # 监控的敏感文件路径
+  match:
+    file_path:
+      patterns:
+        - "/etc/passwd"
+        - "/etc/shadow"
+        - "/etc/group"
+        - "/etc/gshadow"
+        - "/etc/sudoers"
+        - "/etc/sudoers.d/*"
+        - "/etc/ssh/sshd_config"
+        - "/etc/pam.d/*"
+        - "/root/.ssh/*"
+        - "/home/*/.ssh/*"
+        - "/etc/cron*"
+        - "/var/spool/cron/*"
+        - "/etc/systemd/system/*"
+
+  # 排除系统进程
+  exclude:
+    process:
+      - "/usr/bin/passwd"
+      - "/usr/sbin/useradd"
+      - "/usr/sbin/usermod"
+      - "/usr/sbin/userdel"
+      - "/usr/sbin/groupadd"
+      - "/usr/sbin/groupmod"
+      - "*/dpkg"
+      - "*/apt-get"
+      - "*/yum"
+
+enrichment:
+  - type: "file_hash"
+    algorithm: "sha256"
+    field: "file_path"
+  - type: "file_diff"
+    keep_backup: true
+    backup_dir: "/var/log/threat_detection/file_backups"
+  - type: "process_tree"
+    depth: 3
+
+alert:
+  enabled: true
+  title: "敏感文件被修改"
+  message: "用户 {user} 通过进程 {process} 修改了敏感文件 {file_path}"
+  fields:
+    - timestamp
+    - user
+    - process
+    - command_line
+    - file_path
+    - operation
+    - file_hash_before
+    - file_hash_after
+
+actions:
+  - type: "backup"
+    destination: "/var/log/threat_detection/file_backups"
+  - type: "log"
+    include_diff: true
+
+---
+rule_id: "FILE-002"
+name: "可疑文件下载检测"
+description: "检测通过wget/curl下载到敏感目录的文件"
+category: "file"
+severity: "medium"
+enabled: true
+version: "1.0"
+
+tags:
+  - file
+  - download
+  - lateral_movement
+
+data_sources:
+  - auditd
+
+conditions:
+  event_type: "EXECVE"
+
+  # 下载命令
+  match:
+    process:
+      patterns:
+        - "/usr/bin/wget"
+        - "/usr/bin/curl"
+        - "/usr/bin/fetch"
+
+    # 目标目录为敏感位置
+    command_line:
+      contains_any:
+        - "-O /tmp/"
+        - "-o /tmp/"
+        - "-O /dev/shm/"
+        - "-o /dev/shm/"
+        - "-O /var/tmp/"
+        - "-o /var/tmp/"
+
+  # 或下载可执行文件
+  or_match:
+    command_line:
+      regex: "\\.(sh|py|pl|elf|bin|exe)$"
+
+alert:
+  enabled: true
+  title: "检测到可疑文件下载"
+  message: "用户 {user} 下载文件: {command_line}"
+  fields:
+    - user
+    - process
+    - command_line
+    - download_url
+    - destination_path
+
+---
+rule_id: "FILE-003"
+name: "Webshell文件创建检测"
+description: "检测Web目录下可疑脚本文件的创建"
+category: "file"
+severity: "critical"
+enabled: true
+version: "1.0"
+
+tags:
+  - file
+  - webshell
+  - persistence
+
+data_sources:
+  - auditd
+
+conditions:
+  event_type: "PATH"
+  operation: "create"
+
+  # Web根目录
+  match:
+    file_path:
+      starts_with:
+        - "/var/www/"
+        - "/usr/share/nginx/"
+        - "/opt/lampp/htdocs/"
+        - "/home/*/public_html/"
+
+    # 脚本文件扩展名
+    file_extension:
+      - ".php"
+      - ".jsp"
+      - ".asp"
+      - ".aspx"
+      - ".py"
+      - ".pl"
+      - ".sh"
+
+  # 文件内容检测（可选）
+  file_content_regex:
+    - "eval\\s*\\("
+    - "base64_decode"
+    - "system\\s*\\("
+    - "exec\\s*\\("
+    - "shell_exec"
+    - "passthru"
+    - "\\$_GET\\[.*\\]"
+    - "\\$_POST\\[.*\\]"
+
+alert:
+  enabled: true
+  title: "检测到疑似Webshell文件"
+  message: "在Web目录 {file_dir} 下创建了可疑文件 {file_name}"
+  severity: "critical"
+
+enrichment:
+  - type: "file_hash"
+    algorithm: "sha256"
+  - type: "file_content_sample"
+    max_bytes: 1024
+
+---
+rule_id: "FILE-004"
+name: "大文件外传检测"
+description: "检测大文件传输到外部IP（可能的数据外泄）"
+category: "file"
+severity: "high"
+enabled: true
+version: "1.0"
+
+tags:
+  - file
+  - exfiltration
+  - data_loss
+
+data_sources:
+  - auditd
+  - netlink
+
+conditions:
+  # 文件读取
+  event_type: "SYSCALL"
+  syscall: "read"
+
+  # 文件大小较大
+  match:
+    file_size: "> 100MB"
+
+  # 关联网络传输
+  correlation:
+    enabled: true
+    events:
+      - type: "SYSCALL"
+        syscall: "sendto"
+        time_window: 60
+        dest_ip_type: "public"
+
+threshold:
+  type: "volume"
+  field: "bytes_sent"
+  count: "> 100MB"
+  time_window: 300
+  group_by: "dest_ip"
+
+alert:
+  enabled: true
+  title: "检测到大文件外传"
+  message: "进程 {process} 向外部IP {dest_ip} 传输了 {bytes_sent}MB 数据"
+
+---
+rule_id: "FILE-005"
+name: "隐藏文件创建检测"
+description: "检测可疑隐藏文件的创建（以.开头的文件）"
+category: "file"
+severity: "medium"
+enabled: true
+version: "1.0"
+
+tags:
+  - file
+  - stealth
+  - persistence
+
+data_sources:
+  - auditd
+
+conditions:
+  event_type: "PATH"
+  operation: "create"
+
+  # 隐藏文件（以.开头）
+  match:
+    file_name:
+      regex: "^\\.[a-zA-Z0-9]+"
+
+    # 在可疑目录
+    file_path:
+      in_directories:
+        - "/tmp"
+        - "/dev/shm"
+        - "/var/tmp"
+
+    # 可执行权限
+    file_permission:
+      has_execute: true
+
+alert:
+  enabled: true
+  title: "检测到隐藏可执行文件创建"
+  message: "在 {file_dir} 创建了隐藏可执行文件 {file_name}"
+
+---
+rule_id: "FILE-006"
+name: "临时目录可执行文件检测"
+description: "检测在临时目录创建并执行的文件"
+category: "file"
+severity: "high"
+enabled: true
+version: "1.0"
+
+tags:
+  - file
+  - execution
+  - malware
+
+data_sources:
+  - auditd
+
+conditions:
+  event_type: "EXECVE"
+
+  # 从临时目录执行
+  match:
+    process_path:
+      starts_with:
+        - "/tmp/"
+        - "/dev/shm/"
+        - "/var/tmp/"
+
+correlation:
+  enabled: true
+  # 检查文件是否刚创建
+  events:
+    - type: "PATH"
+      operation: "create"
+      time_window: 300
+      same_file: true
+
+alert:
+  enabled: true
+  title: "检测到临时目录可执行文件运行"
+  message: "从临时目录 {process_path} 执行了程序"
+
+---
+rule_id: "FILE-007"
+name: "日志文件清理检测"
+description: "检测日志文件被清空或删除的操作"
+category: "file"
+severity: "high"
+enabled: true
+version: "1.0"
+
+tags:
+  - file
+  - anti_forensics
+  - log_deletion
+
+data_sources:
+  - auditd
+
+conditions:
+  event_type: "PATH"
+
+  # 日志文件
+  match:
+    file_path:
+      patterns:
+        - "/var/log/*.log"
+        - "/var/log/*/*.log"
+        - "/var/log/audit/audit.log"
+        - "/var/log/messages"
+        - "/var/log/syslog"
+        - "/var/log/secure"
+        - "/var/log/auth.log"
+
+    # 操作类型
+    operation:
+      - "delete"
+      - "truncate"
+      - "rename"
+
+  # 排除日志轮转
+  exclude:
+    process:
+      - "logrotate"
+      - "rsyslogd"
+      - "systemd-journald"
+
+alert:
+  enabled: true
+  title: "检测到日志文件被清理"
+  message: "用户 {user} 通过进程 {process} {operation} 了日志文件 {file_path}"
+  severity: "high"

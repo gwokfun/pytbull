@@ -1,0 +1,22 @@
+# Process Monitoring Rules for Auditd
+# These rules should be loaded into auditd using: auditctl -R process.rules
+
+# Monitor all process executions (execve syscall)
+-a always,exit -F arch=b64 -S execve -k process_execution
+-a always,exit -F arch=b32 -S execve -k process_execution
+
+# Monitor process termination
+-a always,exit -F arch=b64 -S exit -S exit_group -k process_exit
+-a always,exit -F arch=b32 -S exit -S exit_group -k process_exit
+
+# Monitor fork/clone (process creation)
+-a always,exit -F arch=b64 -S fork -S vfork -S clone -k process_creation
+-a always,exit -F arch=b32 -S fork -S vfork -S clone -k process_creation
+
+# Monitor ptrace (debugging/injection)
+-a always,exit -F arch=b64 -S ptrace -k process_ptrace
+-a always,exit -F arch=b32 -S ptrace -k process_ptrace
+
+# Monitor process memory modifications
+-a always,exit -F arch=b64 -S mmap -S mprotect -k process_memory
+-a always,exit -F arch=b32 -S mmap -S mprotect -k process_memory

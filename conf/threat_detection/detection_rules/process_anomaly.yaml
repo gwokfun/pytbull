@@ -1,0 +1,323 @@
+# Process Anomaly Detection Rules
+# This file contains rules for detecting process-related threats
+
+---
+rule_id: "PROC-001"
+name: "黑名单进程启动检测"
+description: "检测已知恶意进程或违规软件的启动"
+category: "process"
+severity: "critical"
+enabled: true
+version: "1.0"
+author: "Security Team"
+
+tags:
+  - process
+  - malware
+  - blacklist
+
+data_sources:
+  - auditd
+
+conditions:
+  event_type: "EXECVE"
+
+  match:
+    process_name:
+      in_blacklist: true
+      blacklist_file: "conf/threat_detection/blacklists/processes.txt"
+
+    # 也可以直接指定模式
+    or_patterns:
+      - "*/nc"
+      - "*/ncat"
+      - "*/netcat"
+      - "*backdoor*"
+      - "*rootkit*"
+      - "*/mimikatz"
+      - "*/empire"
+      - "*/msfvenom"
+      - "*/meterpreter"
+
+enrichment:
+  - type: "process_tree"
+    depth: 5
+  - type: "file_hash"
+    field: "process_path"
+    algorithm: "sha256"
+
+alert:
+  enabled: true
+  title: "检测到黑名单进程启动"
+  message: "用户 {user} 启动了黑名单进程 {process} (PID: {pid}), 命令行: {command_line}"
+  severity: "critical"
+  fields:
+    - timestamp
+    - user
+    - pid
+    - process
+    - command_line
+    - parent_process
+    - file_hash
+
+actions:
+  - type: "log"
+    priority: "critical"
+  - type: "syslog"
+  - type: "webhook"
+
+---
+rule_id: "PROC-002"
+name: "高CPU占用进程检测"
+description: "检测CPU占用率异常高的进程（可能是挖矿或恶意程序）"
+category: "resource"
+severity: "medium"
+enabled: true
+version: "1.0"
+
+tags:
+  - process
+  - resource
+  - cpu
+  - cryptomining
+
+data_sources:
+  - proc_monitor
+
+conditions:
+  metric_type: "cpu"
+
+  threshold:
+    cpu_percent: "> 80"
+    duration: 120  # 持续2分钟
+
+  # 排除已知的高CPU进程
+  exclude:
+    processes:
+      - "mysqld"
+      - "postgres"
+      - "java"
+      - "node"
+      - "python.*celery"
+      - "redis-server"
+
+correlation:
+  enabled: true
+  # 检查是否有网络连接（挖矿池）
+  indicators:
+    has_external_connection: true
+
+alert:
+  enabled: true
+  title: "检测到高CPU占用进程"
+  message: "进程 {process} (PID: {pid}) CPU占用率为 {cpu_percent}%, 持续时间: {duration}秒"
+  fields:
+    - process
+    - pid
+    - user
+    - cpu_percent
+    - duration
+    - command_line
+    - external_connections
+
+---
+rule_id: "PROC-003"
+name: "Web服务器异常子进程检测"
+description: "检测Web服务器产生的异常shell子进程（可能是Webshell）"
+category: "process"
+severity: "critical"
+enabled: true
+version: "1.0"
+
+tags:
+  - process
+  - webshell
+  - rce
+
+data_sources:
+  - auditd
+
+conditions:
+  event_type: "EXECVE"
+
+  # 父进程为Web服务器
+  parent_process:
+    patterns:
+      - "httpd"
+      - "apache2"
+      - "nginx"
+      - "php-fpm"
+      - "java.*tomcat"
+
+  # 子进程为Shell或敏感命令
+  child_process:
+    patterns:
+      - "*/bin/bash"
+      - "*/bin/sh"
+      - "*/bin/zsh"
+      - "*/python"
+      - "*/perl"
+      - "*/ruby"
+      - "*/nc"
+      - "*/wget"
+      - "*/curl"
+      - "*/whoami"
+      - "*/id"
+
+correlation:
+  enabled: true
+  time_window: 10
+
+alert:
+  enabled: true
+  title: "检测到Web服务器产生异常子进程"
+  message: "Web服务器 {parent_process} 创建了Shell子进程 {child_process}, 命令: {command_line}"
+  severity: "critical"
+
+---
+rule_id: "PROC-004"
+name: "内存注入检测"
+description: "检测进程间内存注入行为（ptrace或/proc/pid/mem）"
+category: "process"
+severity: "high"
+enabled: true
+version: "1.0"
+
+tags:
+  - process
+  - injection
+  - privilege_escalation
+
+data_sources:
+  - auditd
+
+conditions:
+  event_type: "SYSCALL"
+
+  or_conditions:
+    - syscall: "ptrace"
+      ptrace_request:
+        - "PTRACE_POKETEXT"
+        - "PTRACE_POKEDATA"
+        - "PTRACE_SETREGS"
+
+    - event_type: "PATH"
+      file_path: "/proc/*/mem"
+      operation: "write"
+
+  # 排除调试器
+  exclude:
+    process:
+      - "gdb"
+      - "strace"
+      - "ltrace"
+
+alert:
+  enabled: true
+  title: "检测到进程注入行为"
+  message: "进程 {process} (PID: {pid}) 尝试注入进程 {target_pid}"
+
+---
+rule_id: "PROC-005"
+name: "隐藏进程检测"
+description: "检测进程名称包含空格或特殊字符的隐藏进程"
+category: "process"
+severity: "high"
+enabled: true
+version: "1.0"
+
+tags:
+  - process
+  - stealth
+  - evasion
+
+data_sources:
+  - proc_monitor
+
+conditions:
+  # 进程名包含空格或不可见字符
+  match:
+    process_name:
+      regex: "^\\s+.*|.*\\s+$|.*[\\x00-\\x1f].*"
+
+    # 或进程名与二进制名称不符
+    process_name_mismatch: true
+
+alert:
+  enabled: true
+  title: "检测到疑似隐藏进程"
+  message: "发现可疑进程名: '{process}' (PID: {pid})"
+
+---
+rule_id: "PROC-006"
+name: "危险命令执行检测"
+description: "检测危险命令的执行（如系统清理、日志删除等）"
+category: "process"
+severity: "high"
+enabled: true
+version: "1.0"
+
+tags:
+  - process
+  - anti_forensics
+  - data_destruction
+
+data_sources:
+  - auditd
+
+conditions:
+  event_type: "EXECVE"
+
+  match:
+    command_pattern:
+      - "rm -rf /*"
+      - "dd if=/dev/zero"
+      - "shred"
+      - ">/var/log/*"
+      - "cat /dev/null >"
+      - "echo \"\" >"
+      - "history -c"
+      - "export HISTFILE=/dev/null"
+
+alert:
+  enabled: true
+  title: "检测到危险命令执行"
+  message: "用户 {user} 执行了危险命令: {command_line}"
+  severity: "high"
+
+---
+rule_id: "PROC-007"
+name: "高内存占用进程检测"
+description: "检测内存占用率异常高的进程"
+category: "resource"
+severity: "medium"
+enabled: true
+version: "1.0"
+
+tags:
+  - process
+  - resource
+  - memory
+
+data_sources:
+  - proc_monitor
+
+conditions:
+  metric_type: "memory"
+
+  threshold:
+    memory_percent: "> 70"
+    duration: 180  # 持续3分钟
+
+  exclude:
+    processes:
+      - "mysqld"
+      - "postgres"
+      - "java"
+      - "elasticsearch"
+      - "redis-server"
+
+alert:
+  enabled: true
+  title: "检测到高内存占用进程"
+  message: "进程 {process} (PID: {pid}) 内存占用率为 {memory_percent}%, 使用内存: {memory_mb}MB"

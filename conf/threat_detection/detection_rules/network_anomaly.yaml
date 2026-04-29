@@ -1,0 +1,259 @@
+# Network Anomaly Detection Rules
+# This file contains rules for detecting network-related threats
+
+---
+rule_id: "NET-001"
+name: "外部公网IP访问检测"
+description: "检测系统进程访问外部公网IP地址（排除常见更新程序）"
+category: "network"
+severity: "medium"
+enabled: true
+version: "1.0"
+author: "Security Team"
+created_at: "2026-04-29"
+updated_at: "2026-04-29"
+
+tags:
+  - network
+  - external
+  - internet
+  - public_ip
+
+data_sources:
+  - auditd
+  - netlink
+
+conditions:
+  event_type: "SYSCALL"
+  syscall:
+    - "connect"
+    - "sendto"
+
+  match:
+    # 目标IP为公网IP
+    dest_ip:
+      type: "public_ip"
+      exclude_ranges:
+        - "10.0.0.0/8"
+        - "172.16.0.0/12"
+        - "192.168.0.0/16"
+        - "127.0.0.0/8"
+        - "169.254.0.0/16"
+
+    # 排除白名单进程
+    process:
+      not_in_whitelist: true
+      exclude_patterns:
+        - "^/usr/bin/apt-get"
+        - "^/usr/bin/apt"
+        - "^/usr/bin/yum"
+        - "^/usr/bin/dnf"
+        - "^/usr/bin/wget"
+        - "^/usr/bin/curl"
+        - "^/usr/lib/update-notifier"
+        - "^/usr/bin/python.*pip"
+
+enrichment:
+  - type: "geoip"
+    field: "dest_ip"
+    output: "geo_info"
+  - type: "process_tree"
+    field: "pid"
+    depth: 3
+  - type: "user_info"
+    field: "uid"
+
+alert:
+  enabled: true
+  title: "检测到访问外部公网IP"
+  message: "进程 {process} (PID: {pid}) 由用户 {user} 访问外部IP {dest_ip}:{dest_port} (位置: {geo_info.country})"
+  fields:
+    - timestamp
+    - hostname
+    - user
+    - uid
+    - pid
+    - process
+    - command_line
+    - dest_ip
+    - dest_port
+    - geo_info
+
+suppression:
+  enabled: true
+  duration: 300
+  fields:
+    - process
+    - dest_ip
+
+---
+rule_id: "NET-002"
+name: "内网端口扫描检测"
+description: "检测对内网主机的频繁端口扫描行为"
+category: "network"
+severity: "high"
+enabled: true
+version: "1.0"
+
+tags:
+  - network
+  - scanning
+  - reconnaissance
+
+data_sources:
+  - netlink
+  - auditd
+
+conditions:
+  event_type: "SYSCALL"
+  syscall: "connect"
+
+  match:
+    dest_ip:
+      type: "private_ip"
+      ranges:
+        - "10.0.0.0/8"
+        - "172.16.0.0/12"
+        - "192.168.0.0/16"
+
+threshold:
+  type: "unique_count"
+  field: "dest_port"
+  group_by: ["src_ip", "process"]
+  count: 20
+  time_window: 60
+
+correlation:
+  enabled: true
+  pattern: "scan"
+  indicators:
+    connection_failures_rate: "> 0.8"
+    port_range_wide: true
+
+alert:
+  enabled: true
+  title: "检测到内网端口扫描"
+  message: "进程 {process} (用户: {user}) 在 {time_window} 秒内扫描了 {unique_ports} 个端口"
+  fields:
+    - timestamp
+    - src_ip
+    - user
+    - process
+    - dest_ip_list
+    - port_list
+    - scan_speed
+    - connection_failures
+
+---
+rule_id: "NET-003"
+name: "异常高频网络连接"
+description: "检测短时间内建立大量网络连接的异常行为"
+category: "network"
+severity: "medium"
+enabled: true
+version: "1.0"
+
+tags:
+  - network
+  - frequency
+  - ddos
+
+data_sources:
+  - netlink
+
+conditions:
+  event_type: "CONNECTION"
+  connection_state: "ESTABLISHED"
+
+threshold:
+  type: "frequency"
+  count: 100
+  time_window: 30
+  field: "connection_count"
+  group_by: "process"
+
+alert:
+  enabled: true
+  title: "检测到异常高频网络连接"
+  message: "进程 {process} 在 {time_window} 秒内建立了 {count} 个网络连接"
+
+---
+rule_id: "NET-004"
+name: "反向Shell连接检测"
+description: "检测疑似反向Shell的网络连接行为"
+category: "network"
+severity: "critical"
+enabled: true
+version: "1.0"
+
+tags:
+  - network
+  - reverse_shell
+  - backdoor
+
+data_sources:
+  - auditd
+
+conditions:
+  event_type: "EXECVE"
+
+  # Shell进程
+  match:
+    process:
+      patterns:
+        - "/bin/bash"
+        - "/bin/sh"
+        - "/bin/zsh"
+        - "/bin/dash"
+
+  # 父进程为网络相关
+  correlation:
+    enabled: true
+    events:
+      - type: "SYSCALL"
+        syscall: "connect"
+        time_window: 5
+        relationship: "parent_process"
+
+alert:
+  enabled: true
+  title: "检测到疑似反向Shell连接"
+  message: "发现反向Shell连接: {parent_process} -> {process}, 目标: {dest_ip}:{dest_port}"
+  severity: "critical"
+
+---
+rule_id: "NET-005"
+name: "DNS隧道检测"
+description: "检测疑似DNS隧道的异常DNS查询"
+category: "network"
+severity: "high"
+enabled: true
+version: "1.0"
+
+tags:
+  - network
+  - dns
+  - exfiltration
+
+data_sources:
+  - netlink
+
+conditions:
+  protocol: "udp"
+  dest_port: 53
+
+threshold:
+  type: "frequency"
+  count: 50
+  time_window: 60
+  field: "dns_query"
+
+  # DNS域名长度异常
+  match:
+    dns_query_length: "> 50"
+    dns_subdomain_count: "> 5"
+
+alert:
+  enabled: true
+  title: "检测到疑似DNS隧道"
+  message: "进程 {process} 产生了 {count} 个异常DNS查询"

@@ -1,0 +1,27 @@
+# Whitelist Users
+# Trusted users that should be excluded from certain detections
+# One username per line
+# Lines starting with # are comments
+
+# System users
+root
+daemon
+bin
+sys
+sync
+
+# Service users
+mysql
+postgres
+redis
+nginx
+apache
+
+# Monitoring users
+nagios
+zabbix
+prometheus
+
+# Add your trusted admin users here
+# sysadmin
+# devops

@@ -1,0 +1,39 @@
+# User Activity Monitoring Rules for Auditd
+# These rules should be loaded into auditd using: auditctl -R user.rules
+
+# Monitor user login/logout
+-w /var/log/lastlog -p wa -k user_login
+-w /var/run/utmp -p wa -k user_session
+-w /var/log/wtmp -p wa -k user_session
+-w /var/log/btmp -p wa -k user_failed_login
+
+# Monitor privilege escalation (setuid/setgid)
+-a always,exit -F arch=b64 -S setuid -S setreuid -S setresuid -k privilege_escalation
+-a always,exit -F arch=b32 -S setuid -S setreuid -S setresuid -k privilege_escalation
+-a always,exit -F arch=b64 -S setgid -S setregid -S setresgid -k privilege_escalation
+-a always,exit -F arch=b32 -S setgid -S setregid -S setresgid -k privilege_escalation
+
+# Monitor sudo usage
+-w /etc/sudoers -p wa -k sudo_config
+-w /etc/sudoers.d/ -p wa -k sudo_config
+-w /var/log/sudo.log -p wa -k sudo_usage
+
+# Monitor su command
+-w /bin/su -p x -k su_execution
+-w /usr/bin/su -p x -k su_execution
+
+# Monitor user/group management
+-w /usr/sbin/useradd -p x -k user_management
+-w /usr/sbin/userdel -p x -k user_management
+-w /usr/sbin/usermod -p x -k user_management
+-w /usr/sbin/groupadd -p x -k group_management
+-w /usr/sbin/groupdel -p x -k group_management
+-w /usr/sbin/groupmod -p x -k group_management
+
+# Monitor password changes
+-w /usr/bin/passwd -p x -k password_change
+-w /usr/bin/chpasswd -p x -k password_change
+
+# Monitor capability changes
+-a always,exit -F arch=b64 -S capset -k capability_change
+-a always,exit -F arch=b32 -S capset -k capability_change

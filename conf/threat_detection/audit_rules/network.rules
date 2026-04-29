@@ -1,0 +1,26 @@
+# Network Monitoring Rules for Auditd
+# These rules should be loaded into auditd using: auditctl -R network.rules
+
+# Monitor network connections (connect syscall)
+-a always,exit -F arch=b64 -S connect -k network_connect
+-a always,exit -F arch=b32 -S connect -k network_connect
+
+# Monitor port binding (bind syscall)
+-a always,exit -F arch=b64 -S bind -k network_bind
+-a always,exit -F arch=b32 -S bind -k network_bind
+
+# Monitor socket creation
+-a always,exit -F arch=b64 -S socket -k network_socket
+-a always,exit -F arch=b32 -S socket -k network_socket
+
+# Monitor network data transmission
+-a always,exit -F arch=b64 -S sendto -S sendmsg -k network_send
+-a always,exit -F arch=b32 -S sendto -S sendmsg -k network_send
+
+# Monitor network data reception
+-a always,exit -F arch=b64 -S recvfrom -S recvmsg -k network_recv
+-a always,exit -F arch=b32 -S recvfrom -S recvmsg -k network_recv
+
+# Monitor accept (incoming connections)
+-a always,exit -F arch=b64 -S accept -S accept4 -k network_accept
+-a always,exit -F arch=b32 -S accept -S accept4 -k network_accept

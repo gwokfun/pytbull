@@ -1,0 +1,422 @@
+# User Behavior Anomaly Detection Rules
+# This file contains rules for detecting user-related threats
+
+---
+rule_id: "USER-001"
+name: "非工作时间登录检测"
+description: "检测非工作时间的用户登录行为"
+category: "user"
+severity: "medium"
+enabled: true
+version: "1.0"
+author: "Security Team"
+
+tags:
+  - user
+  - login
+  - time_based
+
+data_sources:
+  - auditd
+
+conditions:
+  event_type: "USER_LOGIN"
+  login_result: "success"
+
+  # 工作时间之外（周一至周五 9:00-18:00）
+  time:
+    working_hours:
+      enabled: true
+      weekdays: [1, 2, 3, 4, 5]  # Monday to Friday
+      start_time: "09:00"
+      end_time: "18:00"
+      alert_outside: true
+
+  # 排除特定用户（如系统管理员）
+  exclude:
+    users:
+      - "root"
+      - "sysadmin"
+      - "nagios"
+      - "zabbix"
+
+alert:
+  enabled: true
+  title: "检测到非工作时间登录"
+  message: "用户 {user} 在 {timestamp} ({weekday}) 从 {src_ip} 登录系统"
+  fields:
+    - timestamp
+    - weekday
+    - user
+    - src_ip
+    - login_method
+
+---
+rule_id: "USER-002"
+name: "权限提升检测"
+description: "监控sudo和su命令的使用"
+category: "user"
+severity: "high"
+enabled: true
+version: "1.0"
+
+tags:
+  - user
+  - privilege_escalation
+  - sudo
+
+data_sources:
+  - auditd
+
+conditions:
+  event_type: "EXECVE"
+
+  match:
+    process:
+      patterns:
+        - "/usr/bin/sudo"
+        - "/bin/su"
+
+    # 提升到root
+    target_user: "root"
+
+enrichment:
+  - type: "user_info"
+    field: "uid"
+  - type: "command_history"
+    user: "uid"
+
+alert:
+  enabled: true
+  title: "检测到权限提升操作"
+  message: "用户 {user} 执行了权限提升命令: {command_line}"
+  fields:
+    - user
+    - process
+    - command_line
+    - target_user
+    - src_ip
+
+---
+rule_id: "USER-003"
+name: "频繁sudo失败检测"
+description: "检测频繁的sudo失败尝试（可能是密码爆破）"
+category: "user"
+severity: "high"
+enabled: true
+version: "1.0"
+
+tags:
+  - user
+  - sudo
+  - brute_force
+
+data_sources:
+  - auditd
+
+conditions:
+  event_type: "USER_CMD"
+  result: "failed"
+  command: "sudo"
+
+threshold:
+  type: "frequency"
+  count: 5
+  time_window: 300
+  group_by: "user"
+
+alert:
+  enabled: true
+  title: "检测到频繁sudo失败"
+  message: "用户 {user} 在 {time_window} 秒内sudo失败 {count} 次"
+
+---
+rule_id: "USER-004"
+name: "异常来源IP登录检测"
+description: "检测从未见过的IP地址登录"
+category: "user"
+severity: "medium"
+enabled: true
+version: "1.0"
+
+tags:
+  - user
+  - login
+  - ip_reputation
+
+data_sources:
+  - auditd
+
+conditions:
+  event_type: "USER_LOGIN"
+  login_result: "success"
+
+  # 来源IP不在历史白名单中
+  match:
+    src_ip:
+      not_in_baseline: true
+      baseline_type: "historical"
+      learning_period: 30  # 天
+
+enrichment:
+  - type: "geoip"
+    field: "src_ip"
+  - type: "ip_reputation"
+    field: "src_ip"
+
+alert:
+  enabled: true
+  title: "检测到来自新IP的登录"
+  message: "用户 {user} 从新IP {src_ip} ({geo_info.country}) 登录"
+
+---
+rule_id: "USER-005"
+name: "用户账户变更检测"
+description: "监控用户和组的添加、删除、修改操作"
+category: "user"
+severity: "high"
+enabled: true
+version: "1.0"
+
+tags:
+  - user
+  - account_management
+  - persistence
+
+data_sources:
+  - auditd
+
+conditions:
+  event_type: "EXECVE"
+
+  match:
+    process:
+      patterns:
+        - "/usr/sbin/useradd"
+        - "/usr/sbin/userdel"
+        - "/usr/sbin/usermod"
+        - "/usr/sbin/groupadd"
+        - "/usr/sbin/groupdel"
+        - "/usr/sbin/groupmod"
+
+enrichment:
+  - type: "command_parser"
+    extract:
+      - username
+      - operation
+      - groups
+
+alert:
+  enabled: true
+  title: "检测到用户账户变更"
+  message: "用户 {operator} 执行了账户操作: {command_line}"
+  fields:
+    - operator
+    - process
+    - command_line
+    - target_user
+    - operation
+
+---
+rule_id: "USER-006"
+name: "SSH密钥添加检测"
+description: "监控SSH authorized_keys文件的修改"
+category: "user"
+severity: "high"
+enabled: true
+version: "1.0"
+
+tags:
+  - user
+  - ssh
+  - persistence
+
+data_sources:
+  - auditd
+
+conditions:
+  event_type: "PATH"
+  operation:
+    - "write"
+    - "create"
+    - "append"
+
+  match:
+    file_path:
+      patterns:
+        - "*/.ssh/authorized_keys"
+        - "*/.ssh/authorized_keys2"
+
+enrichment:
+  - type: "file_diff"
+    keep_backup: true
+  - type: "ssh_key_parse"
+    extract:
+      - key_type
+      - key_fingerprint
+      - key_comment
+
+alert:
+  enabled: true
+  title: "检测到SSH密钥文件修改"
+  message: "用户 {user} 修改了 {file_path}, 添加了SSH密钥"
+  fields:
+    - user
+    - file_path
+    - key_fingerprint
+    - key_comment
+
+---
+rule_id: "USER-007"
+name: "密码策略绕过检测"
+description: "检测直接修改密码文件绕过密码策略"
+category: "user"
+severity: "critical"
+enabled: true
+version: "1.0"
+
+tags:
+  - user
+  - password
+  - policy_bypass
+
+data_sources:
+  - auditd
+
+conditions:
+  event_type: "PATH"
+  operation: "write"
+
+  match:
+    file_path:
+      - "/etc/shadow"
+      - "/etc/passwd"
+
+  # 不是通过passwd命令修改
+  exclude:
+    process:
+      - "/usr/bin/passwd"
+      - "/usr/sbin/chpasswd"
+      - "*/dpkg"
+      - "*/rpm"
+
+alert:
+  enabled: true
+  title: "检测到绕过密码策略"
+  message: "用户 {user} 直接修改了密码文件 {file_path}"
+  severity: "critical"
+
+---
+rule_id: "USER-008"
+name: "登录失败次数检测"
+description: "检测频繁的登录失败尝试"
+category: "user"
+severity: "medium"
+enabled: true
+version: "1.0"
+
+tags:
+  - user
+  - login
+  - brute_force
+
+data_sources:
+  - auditd
+
+conditions:
+  event_type: "USER_LOGIN"
+  login_result: "failed"
+
+threshold:
+  type: "frequency"
+  count: 10
+  time_window: 600
+  group_by: ["user", "src_ip"]
+
+alert:
+  enabled: true
+  title: "检测到频繁登录失败"
+  message: "用户 {user} 从 {src_ip} 登录失败 {count} 次"
+
+---
+rule_id: "USER-009"
+name: "异常时段命令执行检测"
+description: "检测深夜时段的敏感命令执行"
+category: "user"
+severity: "medium"
+enabled: true
+version: "1.0"
+
+tags:
+  - user
+  - command
+  - time_based
+
+data_sources:
+  - auditd
+
+conditions:
+  event_type: "EXECVE"
+
+  # 深夜时段 (00:00 - 06:00)
+  time:
+    time_range:
+      start_time: "00:00"
+      end_time: "06:00"
+
+  # 敏感命令
+  match:
+    process:
+      patterns:
+        - "*/nc"
+        - "*/nmap"
+        - "*/tcpdump"
+        - "*/dd"
+        - "*/shred"
+        - "*/wget"
+        - "*/curl"
+
+  exclude:
+    users:
+      - "root"
+      - "sysadmin"
+
+alert:
+  enabled: true
+  title: "检测到深夜敏感命令执行"
+  message: "用户 {user} 在 {timestamp} 执行了敏感命令: {command_line}"
+
+---
+rule_id: "USER-010"
+name: "Shell历史清理检测"
+description: "检测清除Shell命令历史的行为"
+category: "user"
+severity: "high"
+enabled: true
+version: "1.0"
+
+tags:
+  - user
+  - anti_forensics
+  - history
+
+data_sources:
+  - auditd
+
+conditions:
+  event_type: "EXECVE"
+
+  match:
+    command_pattern:
+      - "history -c"
+      - "cat /dev/null > ~/.bash_history"
+      - "rm */.bash_history"
+      - "export HISTFILE=/dev/null"
+      - "export HISTSIZE=0"
+      - "unset HISTFILE"
+
+alert:
+  enabled: true
+  title: "检测到Shell历史清理"
+  message: "用户 {user} 执行了历史清理命令: {command_line}"
+  severity: "high"

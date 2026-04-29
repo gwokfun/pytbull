@@ -1,0 +1,33 @@
+# Blacklist Processes
+# One process name or pattern per line
+# Supports glob patterns: * (any characters), ? (single character)
+# Lines starting with # are comments
+
+# Known malware/backdoors
+nc
+ncat
+netcat
+socat
+
+# Penetration testing tools (if not authorized)
+# msfconsole
+# msfvenom
+# metasploit
+# empire
+# mimikatz
+
+# Cryptocurrency miners (examples)
+# xmrig
+# ethminer
+# cpuminer
+# ccminer
+
+# Reverse shell tools
+# perl -e
+# python -c
+# ruby -e
+
+# Rootkits (examples)
+# reptile
+# diamorphine
+# suterusu
